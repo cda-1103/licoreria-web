@@ -1,0 +1,2 @@
+Logslogs.log
+npm-debug.logyarn-debug.log*yarn-error.log*pnpm-debug.log*lerna-debug.log*--- SEGURIDAD Y CREDENCIALES (CRÍTICO) ---Ignora tus llaves de Supabase para que no se publiquen en GitHub.env.env.local.env.development.local.env.test.local.env.production.localDependencias y compilaciónnode_modulesdistdist-ssr*.localDirectorios y archivos del Editor (VS Code, JetBrains).vscode/*!.vscode/extensions.json.idea.DS_Store*.suo.ntvs*.njsproj*.sln*.sw?Archivos temporales de sistemaThumbs.dbdesktop.ini

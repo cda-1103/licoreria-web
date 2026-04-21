@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700&display=swap');
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #fcfcfc;
+  color: #1a1c1c;
+}
+
+.serif { font-family: 'Noto Serif', serif; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* TRUCO PARA TU LOGO GIGANTE CON MUCHO ESPACIO BLANCO */
+.logo-container {
+  width: 180px; /* Ajusta qué tan ancho quieres el espacio del logo */
+  height: 90px;
+  overflow: hidden; /* Corta el exceso de blanco */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.logo-zoom {
+  /* Hacemos un zoom masivo para ignorar el desierto blanco de tu imagen */
+  width: 200%; 
+  height: auto;
+  max-width: none;
+  object-fit: contain;
+  object-position: center;
+}
