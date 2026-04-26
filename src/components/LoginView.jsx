@@ -39,11 +39,11 @@ const LoginView = ({ onClose }) => {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-stone-900/60 backdrop-blur-md">
       <form onSubmit={handleLogin} className="bg-white p-12 shadow-2xl w-full max-w-md border border-stone-200">
-        <div className="text-center mb-10 serif italic text-3xl">Vintage & Spirit</div>
+        <div className="text-center mb-10 serif italic text-3xl">ADMIN</div>
         
         <div className="space-y-6">
-          <input name="email" type="email" placeholder="EMAIL" className="w-full p-4 bg-stone-50 border border-stone-100 outline-none focus:border-black text-[10px] font-bold tracking-widest" required />
-          <input name="password" type="password" placeholder="PASSWORD" className="w-full p-4 bg-stone-50 border border-stone-100 outline-none focus:border-black text-[10px] font-bold tracking-widest" required />
+          <input name="email" type="email" placeholder="CORREO ELECTRONICO" className="w-full p-4 bg-stone-50 border border-stone-100 outline-none focus:border-black text-[10px] font-bold tracking-widest" required />
+          <input name="password" type="password" placeholder="CONTRASEÑA" className="w-full p-4 bg-stone-50 border border-stone-100 outline-none focus:border-black text-[10px] font-bold tracking-widest" required />
           
           {errorMsg && (
             <div className="p-3 bg-red-50 text-red-600 text-[10px] font-bold uppercase text-center border border-red-100">
@@ -56,10 +56,10 @@ const LoginView = ({ onClose }) => {
             disabled={loading} 
             className="w-full bg-black text-white py-6 text-[10px] font-black tracking-[0.4em] hover:bg-stone-800 transition-all disabled:opacity-50"
           >
-            {loading ? 'AUTHENTICATING...' : 'ESTABLISH CONNECTION'}
+            {loading ? 'AUTENTICANDO...' : 'ENTRAR'}
           </button>
           
-          <button type="button" onClick={onClose} className="w-full text-stone-300 text-[9px] font-black uppercase tracking-widest">Abort Access</button>
+          <button type="button" onClick={onClose} className="w-full text-stone-300 text-[9px] font-black uppercase tracking-widest">SALIR</button>
         </div>
       </form>
     </div>
