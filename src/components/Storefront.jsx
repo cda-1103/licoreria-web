@@ -8,6 +8,16 @@ const Icon = ({ name, className = "" }) => (
   </span>
 );
 
+// Componente para el esqueleto de carga (Skeleton)
+const ProductSkeleton = () => (
+  <div className="bg-white border border-stone-100 p-4 md:p-6 flex flex-col animate-pulse">
+    <div className="aspect-[3/4] bg-stone-100 mb-6 rounded-sm"></div>
+    <div className="h-3 bg-stone-100 w-3/4 mb-2"></div>
+    <div className="h-3 bg-stone-100 w-1/2 mb-6"></div>
+    <div className="h-6 bg-stone-100 w-1/3 mt-auto"></div>
+  </div>
+);
+
 export default function Storefront({ onAdminClick, session }) {
   // --- ESTADOS ---
   const [products, setProducts] = useState([]);
@@ -96,7 +106,7 @@ export default function Storefront({ onAdminClick, session }) {
     setCurrentPage(1);
   };
 
-  // --- LOCALIZACIÓN GPS CORREGIDA ---
+  // --- LOCALIZACIÓN GPS ---
   const handleGetLocation = () => {
     setIsLocating(true);
     if ("geolocation" in navigator) {
@@ -162,12 +172,11 @@ export default function Storefront({ onAdminClick, session }) {
       </div>
 
       <header className="px-6 md:px-12 py-10 flex justify-between items-center bg-white">
-        {/* LOGO + RIF CENTRADO */}
         <div className="flex flex-col items-center">
           <div className="logo-container">
             <img src="/logo.JPG" className="logo-zoom" alt="B.B.T. Licores" />
           </div>
-          <span className="text-[11px] font-black text-black mt-1 tracking-[0.05em] mr-4 uppercase">
+          <span className="text-[11px] font-black text-black mt-1 tracking-[0.05em] uppercase">
             RIF: J-50144056-5
           </span>
         </div>
@@ -184,7 +193,8 @@ export default function Storefront({ onAdminClick, session }) {
             type="text" 
             value={searchTerm}
             placeholder="BUSCA TU PRODUCTO FAVORITO..." 
-            className="w-full max-w-xl bg-transparent border-b border-stone-200 py-3 text-center text-[11px] font-black tracking-[0.4em] uppercase outline-none focus:border-black transition-all mb-6"
+            // CAMBIO: text-base (16px) previene el zoom automático en móviles
+            className="w-full max-w-xl bg-transparent border-b border-stone-200 py-3 text-center text-base font-black tracking-[0.4em] uppercase outline-none focus:border-black transition-all mb-6 placeholder:text-[11px]"
             onChange={(e) => setSearchTerm(e.target.value)}
           />
           <div className="flex justify-center items-center gap-10">
@@ -232,7 +242,9 @@ export default function Storefront({ onAdminClick, session }) {
       {/* CATÁLOGO */}
       <main className="p-4 md:p-12 max-w-7xl mx-auto min-h-[50vh]">
         {loading ? (
-          <div className="py-20 text-center text-[10px] font-black uppercase tracking-[0.5em] text-stone-200 animate-pulse">Actualizando Bodega...</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-10">
+            {[...Array(8)].map((_, i) => <ProductSkeleton key={i} />)}
+          </div>
         ) : filtered.length === 0 ? (
           <div className="py-32 flex flex-col items-center justify-center text-center animate-in fade-in duration-1000">
             <Icon name="inventory_2" className="text-7xl text-stone-100 mb-6" />
@@ -261,8 +273,13 @@ export default function Storefront({ onAdminClick, session }) {
                         ÚLTIMAS {p.stock}
                       </div>
                     )}
-                    <div className="aspect-[3/4] bg-stone-50/50 mb-6 flex items-center justify-center p-4 relative overflow-hidden">
-                      <img src={p.imagen_url || "/placeholder.png"} className="h-full w-auto object-contain mix-blend-multiply group-hover:scale-110 transition-all duration-1000" />
+                    <div className="aspect-[3/4] bg-stone-50 mb-6 flex items-center justify-center p-4 relative overflow-hidden">
+                      <img 
+                        src={p.imagen_url || "/placeholder.png"} 
+                        loading="lazy" 
+                        alt={p.nombre}
+                        className="h-full w-auto object-contain mix-blend-multiply group-hover:scale-110 transition-all duration-1000" 
+                      />
                     </div>
                     <h3 className="serif text-xs md:text-sm italic leading-tight h-10 overflow-hidden line-clamp-2 text-stone-900 uppercase">
                       {p.nombre}
@@ -336,7 +353,7 @@ export default function Storefront({ onAdminClick, session }) {
               {cart.map(item => (
                 <div key={item.sku} className="flex gap-4 items-center border-b border-stone-50 pb-6">
                   <div className="w-20 h-20 bg-stone-50 border flex items-center justify-center p-2">
-                    <img src={item.imagen_url} className="h-full object-contain mix-blend-multiply" />
+                    <img src={item.imagen_url} loading="lazy" className="h-full object-contain mix-blend-multiply" alt={item.nombre} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="serif text-xs uppercase leading-tight truncate font-bold">{item.nombre}</h4>
@@ -380,7 +397,8 @@ export default function Storefront({ onAdminClick, session }) {
                 <label className="text-[9px] font-black text-stone-400 uppercase tracking-widest block mb-2">Nombre del Cliente</label>
                 <input 
                   type="text" required placeholder="EJ: CLAUDIO DAVILA" 
-                  className="w-full border-b border-stone-200 py-2 text-xs font-bold uppercase outline-none focus:border-black transition-colors"
+                  // CAMBIO: text-base (16px) previene el zoom automático
+                  className="w-full border-b border-stone-200 py-2 text-base font-bold uppercase outline-none focus:border-black transition-colors placeholder:text-xs"
                   value={customerName} onChange={e => setCustomerName(e.target.value)}
                 />
               </div>
@@ -400,7 +418,8 @@ export default function Storefront({ onAdminClick, session }) {
                 <div className="space-y-4 animate-in slide-in-from-top-4">
                   <textarea 
                     required placeholder="DIRECCIÓN DE ENTREGA (URB, CALLE, EDIFICIO...)" 
-                    className="w-full bg-stone-50 p-4 text-[10px] font-bold border border-stone-100 outline-none h-20 resize-none uppercase" 
+                    // CAMBIO: text-base (16px) previene el zoom automático
+                    className="w-full bg-stone-50 p-4 text-base font-bold border border-stone-100 outline-none h-20 resize-none uppercase placeholder:text-[10px]" 
                     value={address} onChange={e => setAddress(e.target.value)} 
                   />
                   <button 
