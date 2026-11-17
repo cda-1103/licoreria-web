@@ -1,32 +1,56 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700&display=swap');
+@layer base {
+  :root {
+    --bg-canvas: #f8f6f1;
+    --bg-surface: #ffffff;
+    --bg-muted: #efece4;
+    --border-hairline: #e2ddd2;
+    --text-ink: #141413;
+    --text-muted: #5c5850;
+    --accent-amber: #9a4d1c;
+    --accent-pine: #1e3a2f;
+  }
 
-body {
-  font-family: 'Inter', sans-serif;
-  background-color: #fcfcfc;
-  color: #1a1c1c;
+  body {
+    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-canvas);
+    color: var(--text-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  select,
+  input,
+  textarea {
+    text-transform: inherit;
+  }
 }
 
-.serif { font-family: 'Noto Serif', serif; }
-.no-scrollbar::-webkit-scrollbar { display: none; }
-
-/* TRUCO PARA TU LOGO GIGANTE CON MUCHO ESPACIO BLANCO */
-.logo-container {
-  width: 180px; /* Ajusta qué tan ancho quieres el espacio del logo */
-  height: 90px;
-  overflow: hidden; /* Corta el exceso de blanco */
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.font-display {
+  font-family: "Fraunces", Georgia, serif;
 }
 
-.logo-zoom {
-  /* Hacemos un zoom masivo para ignorar el desierto blanco de tu imagen */
-  width: 200%; 
-  height: auto;
-  max-width: none;
-  object-fit: contain;
-  object-position: center;
+.font-mono-num {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Fix Leaflet z-index stacking inside drawers/modals */
+.leaflet-container {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  z-index: 10;
 }
