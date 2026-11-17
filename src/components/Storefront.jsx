@@ -32,6 +32,31 @@ const formatPrice = (value) =>
     maximumFractionDigits: 2,
   }).format(Number(value) || 0);
 
+const deduplicateProducts = (rows) => {
+  const byName = new Map();
+  for (const row of rows) {
+    if (row.activo === false) continue;
+    const key = String(row.nombre || '').trim().toLowerCase();
+    if (!key) continue;
+    const prev = byName.get(key);
+    if (!prev) {
+      byName.set(key, row);
+      continue;
+    }
+    const prevTs = new Date(prev.ultima_sincronizacion || prev.actualizado_en || 0).getTime();
+    const rowTs = new Date(row.ultima_sincronizacion || row.actualizado_en || 0).getTime();
+    if (rowTs > prevTs) {
+      byName.set(key, {
+        ...row,
+        imagen_url: row.imagen_url || prev.imagen_url,
+      });
+    } else if (!prev.imagen_url && row.imagen_url) {
+      byName.set(key, { ...prev, imagen_url: row.imagen_url });
+    }
+  }
+  return Array.from(byName.values());
+};
+
 const ProductBottleFallback = ({ title }) => (
   <div className="w-full h-full flex flex-col items-center justify-center bg-[#f8f6f1] text-[#5c5850] p-4 text-center">
     <Package className="w-8 h-8 stroke-[1.5] text-[#9a4d1c] mb-2" />
@@ -104,7 +129,7 @@ export default function Storefront({ onAdminClick, session }) {
         if (rate) setTasaBCV(rate);
 
         if (prodRes?.data) {
-          setProducts(prodRes.data.filter((p) => p.activo !== false));
+          setProducts(deduplicateProducts(prodRes.data));
         }
         if (catRes?.data) {
           setCategories(catRes.data.filter((c) => c.activo !== false));
@@ -136,7 +161,7 @@ export default function Storefront({ onAdminClick, session }) {
     const refreshInterval = setInterval(async () => {
       try {
         const { data } = await supabase.from('productos').select('*').order('nombre');
-        if (data) setProducts(data.filter((p) => p.activo !== false));
+        if (data) setProducts(deduplicateProducts(data));
       } catch {
         // silent background refresh
       }
@@ -633,7 +658,7 @@ export default function Storefront({ onAdminClick, session }) {
                   setCurrentPage(1);
                 }}
                 placeholder="BUSCAR WHISKY, RON, VINO O CERVEZA..."
-                className="w-full min-w-0 pl-10 pr-9 py-2.5 text-xs sm:text-sm bg-[#f8f6f1] border border-[#e2ddd2] rounded-sm outline-none focus:border-[#141413] transition-colors uppercase placeholder:uppercase"
+                className="w-full min-w-0 pl-10 pr-9 py-2.5 text-xs sm:text-sm bg-[#f8f6f1] border border-[#e2ddd2] rounded-sm outline-none focus:border-[#141413] transition-colors uppercase placeholder:uppercase placeholder:text-xs sm:placeholder:text-sm"
               />
               {searchTerm && (
                 <button
@@ -651,7 +676,7 @@ export default function Storefront({ onAdminClick, session }) {
             </div>
 
             {/* Sort & Featured Filter */}
-            <div className="grid grid-cols-1 min-[400px]:grid-cols-2 md:flex md:items-center gap-2 md:gap-2.5 w-full md:w-auto md:shrink-0 min-w-0">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 md:flex md:items-center gap-2 md:gap-2.5 w-full md:w-auto md:shrink-0 min-w-0">
               <button
                 type="button"
                 onClick={() => {

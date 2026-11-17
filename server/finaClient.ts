@@ -316,47 +316,90 @@ export async function syncFinaInventory(
     100
   );
 
-  // Mapear stock por _id, SKU y nombre normalizado
-  const stockById = new Map<string, number>();
-  const stockBySku = new Map<string, number>();
-  const stockByName = new Map<string, number>();
+  // Mapear inventario completo por _id, SKU (lowercase) y nombre normalizado
+  const invById = new Map<string, any>();
+  const invBySku = new Map<string, any>();
+  const invByName = new Map<string, any>();
 
   for (const inv of inventoryItems) {
-    const stock = getInventoryStock(inv);
-    if (inv?._id) stockById.set(String(inv._id), stock);
-    if (inv?.SKU) stockBySku.set(String(inv.SKU).trim(), stock);
-    if (inv?.name) stockByName.set(String(inv.name).trim().toLowerCase(), stock);
+    if (inv?._id) invById.set(String(inv._id).trim(), inv);
+    if (inv?.SKU) {
+      const s = String(inv.SKU).trim().toLowerCase();
+      if (s) invBySku.set(s, inv);
+    }
+    if (inv?.name) {
+      const n = String(inv.name).trim().toLowerCase();
+      if (n) invByName.set(n, inv);
+    }
   }
 
-  const dedupMap = new Map<string, {
+  type NormalizedSyncItem = {
     sku: string;
+    alt_sku: string | null;
     nombre: string;
     precio_usd: number;
     stock: number;
     categoria_nombre: string;
-  }>();
+  };
+
+  const dedupMap = new Map<string, NormalizedSyncItem>();
+  const seenNames = new Set<string>();
 
   for (const prod of priceProducts) {
-    const idKey = prod?._id ? String(prod._id) : '';
-    const skuRaw = prod?.SKU ? String(prod.SKU).trim() : '';
+    const prodId = prod?._id ? String(prod._id).trim() : '';
+    const prodSku = prod?.SKU ? String(prod.SKU).trim() : '';
     const nameRaw = String(prod?.name || '').trim();
-    const sku = skuRaw || idKey;
-    if (!sku || !nameRaw) continue;
+    if (!nameRaw) continue;
 
     const nameKey = nameRaw.toLowerCase();
-    const matchedStock =
-      (idKey && stockById.has(idKey) ? stockById.get(idKey) : undefined) ??
-      (skuRaw && stockBySku.has(skuRaw) ? stockBySku.get(skuRaw) : undefined) ??
-      (nameKey && stockByName.has(nameKey) ? stockByName.get(nameKey) : undefined) ??
-      0;
+    const matchedInv =
+      (prodSku && invBySku.get(prodSku.toLowerCase())) ||
+      (nameKey && invByName.get(nameKey)) ||
+      (prodId && invById.get(prodId)) ||
+      null;
 
-    dedupMap.set(sku, {
+    const invId = matchedInv?._id ? String(matchedInv._id).trim() : '';
+    const invSku = matchedInv?.SKU ? String(matchedInv.SKU).trim() : '';
+
+    // Usar SKU de código de barras si existe; si no, priorizar inv._id (ID canónico de inventario) sobre prod._id
+    const sku = prodSku || invSku || invId || prodId;
+    if (!sku) continue;
+
+    const altSku = prodId && prodId !== sku ? prodId : null;
+    const stock = matchedInv ? getInventoryStock(matchedInv) : 0;
+
+    dedupMap.set(sku.toLowerCase(), {
       sku,
+      alt_sku: altSku,
       nombre: nameRaw,
       precio_usd: getPrincipalChannelPrice(prod),
-      stock: Math.max(0, Math.floor(matchedStock)),
-      categoria_nombre: String(prod?.category || '').trim(),
+      stock: Math.max(0, Math.floor(stock)),
+      categoria_nombre: String(prod?.category || matchedInv?.category || '').trim(),
     });
+    seenNames.add(nameKey);
+  }
+
+  // Respaldo: incluir cualquier artículo presente en /api/inventory que no vino en sales-channel
+  for (const inv of inventoryItems) {
+    const nameRaw = String(inv?.name || '').trim();
+    if (!nameRaw) continue;
+    const nameKey = nameRaw.toLowerCase();
+    if (seenNames.has(nameKey)) continue;
+
+    const invId = inv?._id ? String(inv._id).trim() : '';
+    const invSku = inv?.SKU ? String(inv.SKU).trim() : '';
+    const sku = invSku || invId;
+    if (!sku || dedupMap.has(sku.toLowerCase())) continue;
+
+    dedupMap.set(sku.toLowerCase(), {
+      sku,
+      alt_sku: null,
+      nombre: nameRaw,
+      precio_usd: Number(inv?.sellingPrice ?? 0) || 0,
+      stock: getInventoryStock(inv),
+      categoria_nombre: String(inv?.category || '').trim(),
+    });
+    seenNames.add(nameKey);
   }
 
   const normalized = Array.from(dedupMap.values());
@@ -364,6 +407,7 @@ export async function syncFinaInventory(
   const probeLog = [
     `Precios (Canal Principal): ${priceProducts.length} productos`,
     `Cantidades (/api/inventory): ${inventoryItems.length} registros`,
+    `Productos unificados: ${normalized.length}`,
   ];
 
   const { url, key } = getSupabaseServerConfig();
@@ -388,6 +432,9 @@ export async function syncFinaInventory(
   });
 
   if (rpcRes.ok) {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY || userJwt) {
+      await cleanupDuplicateAndStaleRest(url, key, authBearer, normalized).catch(() => {});
+    }
     return {
       synced: normalized.length,
       source: '/api/pos/sales-channel/products + /api/inventory',
@@ -419,12 +466,127 @@ function slugifyCategory(name: string): string {
     .replace(/^-+|-+$/g, '') || 'general';
 }
 
+async function cleanupDuplicateAndStaleRest(
+  url: string,
+  key: string,
+  authBearer: string,
+  items: Array<{
+    sku: string;
+    alt_sku?: string | null;
+    nombre: string;
+  }>
+): Promise<void> {
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${authBearer}`,
+    'Content-Type': 'application/json',
+  };
+
+  const res = await fetch(
+    `${url}/rest/v1/productos?select=id,sku,nombre,stock,precio_usd,precio_bloqueado,imagen_url,destacado,activo,ultima_sincronizacion&limit=10000`,
+    { headers }
+  );
+  if (!res.ok) return;
+
+  const existing = (await res.json()) as Array<{
+    id: string;
+    sku: string;
+    nombre: string;
+    stock?: number;
+    precio_usd?: number;
+    precio_bloqueado?: boolean;
+    imagen_url?: string | null;
+    destacado?: boolean;
+    activo?: boolean;
+    ultima_sincronizacion?: string | null;
+  }>;
+
+  const canonicalSkuSet = new Set(items.map((i) => i.sku.trim().toLowerCase()));
+  const byName = new Map<string, typeof existing>();
+
+  for (const row of existing) {
+    const k = String(row.nombre || '').trim().toLowerCase();
+    if (!k) continue;
+    const arr = byName.get(k) || [];
+    arr.push(row);
+    byName.set(k, arr);
+  }
+
+  // 1. Eliminar o desactivar duplicados por nombre (conservando la fila con SKU canónico)
+  for (const group of byName.values()) {
+    if (group.length <= 1) continue;
+    const sorted = [...group].sort((a, b) => {
+      const aCanon = canonicalSkuSet.has(String(a.sku || '').trim().toLowerCase()) ? 1 : 0;
+      const bCanon = canonicalSkuSet.has(String(b.sku || '').trim().toLowerCase()) ? 1 : 0;
+      if (bCanon !== aCanon) return bCanon - aCanon;
+      return (b.imagen_url ? 1 : 0) - (a.imagen_url ? 1 : 0);
+    });
+
+    const keeper = sorted[0];
+    const dups = sorted.slice(1);
+
+    // Preservar imagen/destacado/precio_bloqueado si estaban en un duplicado
+    const patchKeeper: Record<string, any> = {};
+    for (const d of dups) {
+      if (!keeper.imagen_url && d.imagen_url && !patchKeeper.imagen_url) patchKeeper.imagen_url = d.imagen_url;
+      if (!keeper.destacado && d.destacado) patchKeeper.destacado = true;
+      if (!keeper.precio_bloqueado && d.precio_bloqueado) {
+        patchKeeper.precio_bloqueado = true;
+        patchKeeper.precio_usd = d.precio_usd;
+      }
+    }
+    if (Object.keys(patchKeeper).length > 0) {
+      await fetch(`${url}/rest/v1/productos?id=eq.${keeper.id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(patchKeeper),
+      });
+    }
+
+    for (const d of dups) {
+      const delRes = await fetch(`${url}/rest/v1/productos?id=eq.${d.id}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!delRes.ok) {
+        await fetch(`${url}/rest/v1/productos?id=eq.${d.id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ activo: false, stock: 0 }),
+        });
+      }
+    }
+  }
+
+  // 2. Desactivar productos huérfanos de Fina que ya no están en el catálogo actual (si fue sync completo)
+  if (items.length >= 50) {
+    const staleIds = existing
+      .filter((row) => {
+        const skuLower = String(row.sku || '').trim().toLowerCase();
+        const looksLikeFina = /^[0-9a-f]{24}$/i.test(skuLower) || Boolean(row.ultima_sincronizacion);
+        return looksLikeFina && !canonicalSkuSet.has(skuLower) && (row.activo !== false || Number(row.stock || 0) > 0);
+      })
+      .map((r) => r.id);
+
+    for (let i = 0; i < staleIds.length; i += 100) {
+      const slice = staleIds.slice(i, i + 100);
+      const inList = slice.map((id) => `"${id}"`).join(',');
+      await fetch(`${url}/rest/v1/productos?id=in.(${inList})`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ activo: false, stock: 0 }),
+      });
+    }
+  }
+}
+
 async function upsertProductsDirectRest(
   url: string,
   key: string,
   authBearer: string,
   items: Array<{
     sku: string;
+    alt_sku?: string | null;
     nombre: string;
     precio_usd: number;
     stock: number;
@@ -475,7 +637,6 @@ async function upsertProductsDirectRest(
         if (c.nombre && c.id) catByLower.set(c.nombre.trim().toLowerCase(), c.id);
       });
     }
-    // Re-consultar por si hubo conflictos ignorados
     const refreshCatRes = await fetch(`${url}/rest/v1/categorias?select=id,nombre&limit=1000`, {
       headers,
     });
@@ -514,7 +675,9 @@ async function upsertProductsDirectRest(
       precio_usd: precioUsd,
       stock: item.stock,
       categoria_id: catId,
+      activo: true,
       actualizado_en: nowIso,
+      ultima_sincronizacion: nowIso,
     };
   });
 
@@ -540,4 +703,6 @@ async function upsertProductsDirectRest(
       throw new Error(`Error guardando lote en productos: ${upErr}`);
     }
   }
+
+  await cleanupDuplicateAndStaleRest(url, key, authBearer, items);
 }

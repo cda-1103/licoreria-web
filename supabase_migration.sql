@@ -178,7 +178,7 @@ GRANT EXECUTE ON FUNCTION public.crear_pedido_guest(
   text, text, text, text, text, numeric, numeric, numeric, numeric, numeric, text, text, jsonb
 ) TO anon, authenticated, service_role;
 
--- 6. Función de sincronización desde Fina Partner respetando precio_bloqueado
+-- 6. Función de sincronización desde Fina Partner (sin duplicados y limpiando huérfanos)
 CREATE OR REPLACE FUNCTION public.sincronizar_productos_fina(p_items jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -189,10 +189,25 @@ DECLARE
   v_item jsonb;
   v_cat_id uuid;
   v_slug text;
+  v_sku text;
+  v_alt_sku text;
+  v_nombre text;
+  v_keeper_id uuid;
+  v_dup record;
   v_count integer := 0;
+  v_seen_skus text[] := ARRAY[]::text[];
 BEGIN
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
+    v_sku := TRIM(COALESCE(v_item->>'sku', ''));
+    v_alt_sku := TRIM(COALESCE(v_item->>'alt_sku', ''));
+    v_nombre := TRIM(COALESCE(v_item->>'nombre', ''));
+    IF v_sku = '' OR v_nombre = '' THEN
+      CONTINUE;
+    END IF;
+
+    v_seen_skus := array_append(v_seen_skus, LOWER(v_sku));
+
     IF COALESCE(TRIM(v_item->>'categoria_nombre'), '') <> '' THEN
       v_slug := TRIM(BOTH '-' FROM LOWER(REGEXP_REPLACE(TRIM(v_item->>'categoria_nombre'), '[^a-zA-Z0-9]+', '-', 'g')));
       IF v_slug = '' THEN
@@ -215,12 +230,74 @@ BEGIN
       v_cat_id := NULL;
     END IF;
 
+    -- Buscar si ya existe fila canónica por sku o por alt_sku / nombre
+    SELECT id INTO v_keeper_id
+    FROM public.productos
+    WHERE LOWER(TRIM(sku)) = LOWER(v_sku)
+    LIMIT 1;
+
+    IF v_keeper_id IS NULL AND v_alt_sku <> '' THEN
+      SELECT id INTO v_keeper_id
+      FROM public.productos
+      WHERE LOWER(TRIM(sku)) = LOWER(v_alt_sku)
+      LIMIT 1;
+      IF v_keeper_id IS NOT NULL THEN
+        UPDATE public.productos SET sku = v_sku WHERE id = v_keeper_id;
+      END IF;
+    END IF;
+
+    IF v_keeper_id IS NULL THEN
+      SELECT id INTO v_keeper_id
+      FROM public.productos
+      WHERE LOWER(TRIM(nombre)) = LOWER(v_nombre)
+      ORDER BY (imagen_url IS NOT NULL) DESC, actualizado_en DESC NULLS LAST
+      LIMIT 1;
+      IF v_keeper_id IS NOT NULL THEN
+        UPDATE public.productos SET sku = v_sku WHERE id = v_keeper_id;
+      END IF;
+    END IF;
+
+    -- Limpiar cualquier fila duplicada (por alt_sku o mismo nombre) antes del upsert
+    FOR v_dup IN
+      SELECT id, imagen_url, destacado, precio_bloqueado, precio_usd
+      FROM public.productos
+      WHERE (v_keeper_id IS NULL OR id <> v_keeper_id)
+        AND (
+          LOWER(TRIM(sku)) = LOWER(v_sku)
+          OR (v_alt_sku <> '' AND LOWER(TRIM(sku)) = LOWER(v_alt_sku))
+          OR LOWER(TRIM(nombre)) = LOWER(v_nombre)
+        )
+    LOOP
+      IF v_keeper_id IS NOT NULL THEN
+        UPDATE public.productos
+        SET imagen_url = COALESCE(public.productos.imagen_url, v_dup.imagen_url),
+            destacado = (COALESCE(public.productos.destacado, false) OR COALESCE(v_dup.destacado, false)),
+            precio_bloqueado = (COALESCE(public.productos.precio_bloqueado, false) OR COALESCE(v_dup.precio_bloqueado, false)),
+            precio_usd = CASE
+              WHEN NOT COALESCE(public.productos.precio_bloqueado, false) AND COALESCE(v_dup.precio_bloqueado, false)
+              THEN v_dup.precio_usd
+              ELSE public.productos.precio_usd
+            END
+        WHERE id = v_keeper_id;
+      END IF;
+
+      BEGIN
+        DELETE FROM public.productos WHERE id = v_dup.id;
+      EXCEPTION WHEN foreign_key_violation THEN
+        UPDATE public.productos
+        SET activo = false,
+            stock = 0,
+            sku = sku || '-dup-' || LEFT(id::text, 8)
+        WHERE id = v_dup.id;
+      END;
+    END LOOP;
+
     INSERT INTO public.productos (
       sku, nombre, precio_usd, stock, categoria_id, activo, actualizado_en, ultima_sincronizacion
     )
     VALUES (
-      TRIM(v_item->>'sku'),
-      TRIM(v_item->>'nombre'),
+      v_sku,
+      v_nombre,
       COALESCE((v_item->>'precio_usd')::numeric, 0),
       COALESCE((v_item->>'stock')::integer, 0),
       v_cat_id,
@@ -242,6 +319,16 @@ BEGIN
 
     v_count := v_count + 1;
   END LOOP;
+
+  -- En sincronizaciones completas, desactivar productos huérfanos de Fina que ya no existen
+  IF v_count >= 50 THEN
+    UPDATE public.productos
+    SET activo = false,
+        stock = 0
+    WHERE (ultima_sincronizacion IS NOT NULL OR sku ~ '^[0-9a-fA-F]{24}$')
+      AND NOT (LOWER(TRIM(sku)) = ANY(v_seen_skus))
+      AND (COALESCE(activo, true) = true OR COALESCE(stock, 0) > 0);
+  END IF;
 
   RETURN jsonb_build_object('synced', v_count);
 END;

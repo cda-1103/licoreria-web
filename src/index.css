@@ -18,6 +18,7 @@
     background-color: var(--bg-canvas);
     color: var(--text-ink);
     -webkit-font-smoothing: antialiased;
+    touch-action: manipulation;
   }
 
   button,
@@ -25,6 +26,15 @@
   input,
   textarea {
     text-transform: inherit;
+  }
+}
+
+/* Evita zoom automático en iOS/móvil al enfocar inputs, selects o textareas */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
   }
 }
 
